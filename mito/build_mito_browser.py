@@ -142,7 +142,7 @@ def main():
            'The Palomar et al. 2024 libraries come from purified chloroplasts, so mitochondrial reads in them are contamination and are not shown. '
            '<a href="https://claude.ai/artifact/UeZy1saThZ1DuhPQN97wGy" target="_blank" rel="noopener">Chloroplast page</a>.')
     data['page'] = {
-        'h1': 'ChloroplastDB.org · mitochondrion', 'title': 'Arabidopsis Mitochondrion Browser', 'sub': sub,
+        'h1': 'ChloroplastGenome · mitochondrion', 'title': 'Arabidopsis Mitochondrion Browser', 'sub': sub,
         'url': 'https://claude.ai/artifact/VY8BpJ8nRKAYdxtMmUwHHQ', 'mapLabel': 'Plastid-derived (MTPT)', 'mapNoLabels': True, 'tick': 50000, 'jump': None,
         'map': [[s, e, f'MTPT {s:,}–{e:,}'] for s, e, *_ in mt] or [[1, L, 'mitochondrion']],
         'kv': [[len({g['name'] for g in gl if g['type'] == 'CDS'}), 'protein-coding genes'], [ntrna, 'GenBank tRNAs'],
