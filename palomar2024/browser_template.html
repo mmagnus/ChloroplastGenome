@@ -1,0 +1,663 @@
+<title>ChloroplastDB.org</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working column; genome map strip -> track browser -> sortable hit table. */
+:root {
+  --bg: #ffffff; --panel: #ffffff; --fg: #1d2421; --muted: #5d6b65; --line: #dfe4e1; --grid: #edf0ee;
+  --accent: #1f6f5c; --hl: rgba(235,104,52,.14);
+  --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100; --c5: #e87ba4; --c6: #008300; --c7: #8a5cd1; --red: #d62f2f;
+  --gene: #6f7d77; --neg: .45;
+  --sans: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+.wrap { max-width: 1280px; margin: 0 auto; padding-block: 24px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 20px; }
+header { display: grid; gap: 6px; }
+h1 { font-size: 26px; font-weight: 600; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.sub { color: var(--muted); max-width: 80ch; margin: 0; }
+.sub a, td a { color: var(--accent); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+input[type=text] { font-family: var(--mono); font-size: 13px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); width: 16ch; }
+button, select { font: inherit; font-size: 13px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; }
+button:hover, select:hover { border-color: var(--accent); }
+button:focus-visible, select:focus-visible, input:focus-visible, th:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; user-select: none; }
+.chip[aria-pressed="false"] { opacity: .45; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+#browser { position: relative; overflow: hidden; }
+canvas { display: block; width: 100%; touch-action: none; cursor: grab; }
+canvas.drag { cursor: grabbing; }
+#ov { height: 46px; cursor: pointer; }
+#tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 12px; max-width: 340px; box-shadow: 0 4px 14px rgba(0,0,0,.12); z-index: 3; }
+#card { position: absolute; z-index: 4; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; max-width: 320px; box-shadow: 0 6px 20px rgba(0,0,0,.14); display: grid; gap: 6px; }
+#card .links { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+#card a { color: var(--accent); font-weight: 500; }
+#card button { position: absolute; top: 4px; right: 6px; border: 0; padding: 0 4px; background: none; font-size: 16px; line-height: 1; color: var(--muted); }
+.hint { color: var(--muted); font-size: 12px; margin: 0; }
+.tablewrap { overflow-x: auto; max-height: 640px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+th, td { padding: 5px 8px; border-bottom: 1px solid var(--grid); text-align: left; white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--panel); font-weight: 600; cursor: pointer; z-index: 1; font-size: 11.5px; }
+th.num, td.num { text-align: right; }
+th .grp { display: block; font-weight: 400; color: var(--muted); font-size: 10.5px; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--hl); }
+tr.sel { background: var(--hl); }
+td.note { white-space: normal; min-width: 260px; max-width: 420px; color: var(--muted); }
+.pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; }
+.cell { display: inline-block; min-width: 4.2ch; padding: 0 4px; border-radius: 3px; }
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.kv div { display: grid; gap: 2px; }
+.kv b { font-size: 20px; font-weight: 600; font-family: var(--mono); }
+.kv span { color: var(--muted); font-size: 12px; }
+#r2r { position: fixed; inset: 0; z-index: 20; background: rgba(20,26,24,.55); display: grid; place-items: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+#r2r .box { background: #ffffff; color: var(--fg); border-radius: 10px; width: min(100%, max(50vw, 340px)); height: min(100%, max(50vh, 260px));  /* about a quarter of the screen */ display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
+#r2r header { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+#r2r header b { font-size: 14px; } #r2r header .sp { flex: 1; }
+#r2r .img { overflow: auto; padding: 12px; min-height: 0; } #r2r img { max-width: none; display: block; width: 100%; height: auto; }
+.r2rb { font-size: 11.5px; padding: 2px 8px; }
+.find-msg { color: var(--muted); font-size: 12px; min-width: 4ch; }
+#share-url { width: min(46ch, 100%); }
+.controls label.chk { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--fg); display: inline-flex; gap: 5px; align-items: center; }
+footer { color: var(--muted); font-size: 12px; display: grid; gap: 4px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1 id="h1">ChloroplastDB.org</h1>
+    <p class="sub" id="sub">Arabidopsis thaliana chloroplast (NC_000932.1, 154,478 bp). Data tracks are from
+      <a href="https://doi.org/10.1073/pnas.2309244121" target="_blank" rel="noopener">Palomar et al. 2024, PNAS</a>
+      (Wierzbicki lab; GEO <a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE228230" target="_blank" rel="noopener">GSE228230</a>),
+      remapped from the raw reads. The other rows show our rnahub/R-scape scan, the
+      <a href="https://www.biorxiv.org/content/10.1101/2025.08.06.668526v3" target="_blank" rel="noopener">Mehta et al. 2025</a> Rfam families,
+      Rfam cmscan hits and TransTermHP terminators. <a href="https://claude.ai/artifact/VY8BpJ8nRKAYdxtMmUwHHQ" target="_blank" rel="noopener">Mitochondrion page</a>.</p>
+  </header>
+
+  <section class="panel" aria-label="Summary">
+    <div class="kv" id="kv"></div>
+  </section>
+
+  <section class="panel" aria-label="Genome browser">
+    <div class="controls">
+      <label for="loc">Locus</label>
+      <input type="text" id="loc" value="1-154478" aria-label="Locus start-end">
+      <button id="go">Go</button>
+      <label for="find">Find</label>
+      <input type="text" id="find" list="find-list" placeholder="gene, e.g. psbA" aria-label="Find a gene or feature by name" autocomplete="off">
+      <datalist id="find-list"></datalist><span id="find-msg" class="find-msg" aria-live="polite"></span>
+      <button id="zin" aria-label="Zoom in">Zoom in</button>
+      <button id="zout" aria-label="Zoom out">Zoom out</button>
+      <button id="whole">Whole genome</button>
+      <button id="share" aria-label="Copy a link to this view">Copy link</button>
+      <input type="text" id="share-url" readonly hidden aria-label="Link to this view">
+      <span id="views-box" hidden><select id="views" aria-label="Saved views"><option value="">Saved views…</option></select>
+      <button id="save-view">Save view</button><button id="del-view" hidden aria-label="Delete the selected saved view">Delete</button></span>
+      <button id="jump-hp">RF04354 / trnI-CAU</button>
+      <button id="reset-order">Reset track order</button>
+      <label class="chk"><input type="checkbox" id="guides" checked> Rfam guide lines</label>
+      <label for="zspeed">Zoom speed</label>
+      <select id="zspeed" aria-label="Zoom speed"><option value="0.3">Slow</option><option value="1" selected>Normal</option><option value="3">Fast</option></select>
+    </div>
+    <div class="chips" id="groups" aria-label="Show track groups"></div>
+    <canvas id="ov" aria-label="Whole genome overview; the box marks the current view"></canvas>
+    <div id="browser"><canvas id="cv" aria-label="Genome tracks"></canvas><div id="tip" hidden></div><div id="card" hidden role="dialog" aria-label="Feature links"></div></div>
+    <p class="hint" id="hint">Drag to pan, scroll or pinch to zoom, click a feature to select it. Drag a track name (⋮⋮) up or down to reorder the tracks. RNA-seq (Di et al. 2014, SRP028304; rRNA-depleted, stranded) shows + strand up (green) and − strand down (purple) on a log scale. Click a gene or an Rfam/Mehta family for links to NCBI, UniProt and Rfam. Click an rnahub region or helix to open its R-scape R2R diagram. Data tracks are log2 ratios in 50-bp bins; bars above the line are enriched over the control.</p>
+  </section>
+
+  <section class="panel" aria-label="Promoters and sigma factors" id="prom-panel">
+    <div class="controls">
+      <h2>PEP promoters and sigma factors</h2>
+      <select id="pclass" aria-label="Filter promoters">
+        <option value="all">All promoters</option>
+        <option value="sig">SIG2-dependent or partial</option>
+        <option value="lit">With a literature sigma</option>
+      </select>
+    </div>
+    <p class="hint">Promoters are RpoB ptChIP peaks in 4-day Col-0 seedlings (log2 ≥ 1). SIG2 dependence is the drop in polymerase binding in the sig2 mutant after removing the genome-wide median drop: dependent ≤ −1, partial −1 to −0.5. Boxes are the best TTGACA/TATAAT-like pair on the strand of the driven gene. They are putative, as is the TSS (−10 box + 7 nt). Conservation is identity across 4,064 plastid genera. TSS mapped is the nearest TAP-enriched 5′ end within 60 nt (Terminome-seq, Castandet et al. 2019). Literature sigma assignments are for A. thaliana; check them before citing. Sigma 1, 3, 4, 5 and 6 cannot be assigned from these data.</p>
+    <div class="tablewrap"><table id="ptbl"></table></div>
+  </section>
+
+  <section class="panel" aria-label="Hits" id="hits-panel">
+    <div class="controls">
+      <h2>Hits and their Palomar signal</h2>
+      <select id="kind" aria-label="Filter by hit type">
+        <option value="all">All hits</option>
+        <option value="ours">Our new candidate</option>
+        <option value="helix">Our covarying helices</option>
+        <option value="mehta">Mehta / Rfam families</option>
+        <option value="term">TransTermHP terminators</option>
+      </select>
+      <select id="valmode" aria-label="Show values as">
+        <option value="pct">Genome-wide percentile</option>
+        <option value="log2">log2 ratio</option>
+      </select>
+    </div>
+    <p class="hint">Values are computed over each exact locus. The percentile compares the value with all 50-bp bins of the genome (100 = highest). Click a column to sort and a row to show it in the browser.</p>
+    <div class="tablewrap"><table id="tbl"></table></div>
+  </section>
+
+  <footer>
+    <span id="foot"></span>
+    <span id="foot2">IPOD and ptChIP: sample/input coverage. ptATAC: Tn5 insertions, nucleoid/naked DNA. SOLINA: membrane/stroma coverage. Replicates normalised to reads per million and averaged; pseudocount 0.5 RPM per nt. Reads mapped with bowtie2 --local, multi-mapping reads kept (as in the paper) so both inverted repeats carry signal.</span>
+  </footer>
+</div>
+
+<div id="r2r" hidden role="dialog" aria-modal="true" aria-label="R2R structure diagram">
+  <div class="box">
+    <header><b id="r2r-title"></b><span class="hint" id="r2r-run"></span><span class="sp"></span>
+      <button id="r2r-zout" aria-label="Smaller">−</button><button id="r2r-zin" aria-label="Larger">+</button>
+      <button id="r2r-other"></button><button id="r2r-close" aria-label="Close">Close</button></header>
+    <div class="img"><img id="r2r-img" alt="R-scape CaCoFold structure drawn by R2R"></div>
+  </div>
+</div>
+
+<script>
+const DATA = /*DATA*/null;
+const L = DATA.length, BIN = DATA.bin;
+// optional per-genome page settings (another genome, e.g. the mitochondrion, sets DATA.page; the chloroplast page uses the defaults)
+const PAGE = Object.assign({ url: 'https://claude.ai/artifact/UeZy1saThZ1DuhPQN97wGy', mapLabel: 'LSC / IR / SSC', jump: { label: 'RF04354 / trnI-CAU', start: 86311, end: 86385, pad: 1200 }, tick: 25000 }, DATA.page || {});
+const setHTML = (id, v) => { if (v != null) document.getElementById(id).innerHTML = v; };
+setHTML('h1', PAGE.h1); setHTML('sub', PAGE.sub); setHTML('foot2', PAGE.foot); setHTML('hint', PAGE.hint);
+if (PAGE.h1) document.title = PAGE.title || PAGE.h1;
+if (!(DATA.hits || []).length) document.getElementById('hits-panel').hidden = true;
+if (!DATA.regions) Object.assign(DATA, { regions: [], helices: [], mehta: [], mehta_nohit: [], terminators: [], hits: [] });
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const GROUPS = [
+  ['Annotation', '--gene'], ['Protein occupancy', '--c1'], ['PEP binding', '--c2'],
+  ['DNA accessibility', '--c3'], ['Membrane association', '--c4'], ['RNA ends', '--c7'], ['RNA-seq', '--c6']];
+const KIND = { ours: ['Our new candidate', '--c2'], helix: ['Our helix', '--c1'], mehta: ['Mehta family', '--c5'], term: ['Terminator', '--c3'] };
+let shown = {}; try { shown = JSON.parse(localStorage.getItem('pb-groups') || '{}'); } catch (e) {}
+GROUPS.forEach(([g]) => { if (!(g in shown)) shown[g] = true; });
+let view = [1, L], sel = null, order = [], rdrag = null;
+try { order = JSON.parse(localStorage.getItem('pb-order') || '[]'); } catch (e) {}
+
+/* summary */
+const regs = DATA.regions, nflag = regs.filter(r => +r.genus_canon >= 1).length;
+const goodHel = new Set(DATA.helices.filter(h => h.run === 'genus' && h.ncov >= 2 && h.nbp >= 4).map(h => h.region)).size;
+document.getElementById('kv').innerHTML = (PAGE.kv || [
+  [regs.length, 'non-coding regions scanned'], [nflag, 'flagged, ≥1 canonical covarying pair (genus)'],
+  [goodHel, 'regions with a real helix (≥4 bp, ≥2 cov)'], [DATA.mehta.length + ' / ' + (DATA.mehta.length + DATA.mehta_nohit.length), 'Mehta family loci found in A. thaliana'],
+  [DATA.terminators.filter(t => t.confidence >= 90).length, 'TransTermHP terminators, conf ≥ 90'], [DATA.tracks.length, 'Palomar data tracks']
+]).map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('');
+if (DATA.tracks.length) document.getElementById('foot').textContent = 'Tracks: ' + DATA.tracks.map(t => `${t.label} (${t.reps[0]} vs ${t.reps[1]} reps)`).join('; ') + '.';
+
+/* group chips */
+const gEl = document.getElementById('groups');
+GROUPS.forEach(([g, c]) => {
+  const n = g === 'Annotation' ? '' : g === 'RNA ends' ? (DATA.ends ? ` (${Object.keys(DATA.ends.tracks).length})` : ' (0)') : g === 'RNA-seq' ? ` (${(DATA.rnaseq || []).length})` : ` (${DATA.tracks.filter(t => t.group === g).length})`;
+  if (n === ' (0)') return;
+  const b = document.createElement('span');
+  b.className = 'chip'; b.tabIndex = 0; b.setAttribute('role', 'button'); b.setAttribute('aria-pressed', shown[g]);
+  b.innerHTML = `<span class="sw" style="background:var(${c})"></span>${g}${n}`;
+  const t = () => { shown[g] = !shown[g]; b.setAttribute('aria-pressed', shown[g]); try { localStorage.setItem('pb-groups', JSON.stringify(shown)); } catch (e) {} draw(); };
+  b.onclick = t; b.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); t(); } };
+  gEl.appendChild(b);
+});
+
+/* rows */
+const LABW = 170, ANN_H = 18, DAT_H = 34;
+function rows() {
+  const r = [];
+  if (shown['Annotation']) {
+    r.push({ type: 'map', label: PAGE.mapLabel, h: 12 });
+    r.push({ type: 'genes', label: 'Genes  + strand', strand: '+', h: ANN_H });
+    r.push({ type: 'genes', label: 'Genes  − strand', strand: '-', h: ANN_H });
+    if (DATA.regions.length) r.push({ type: 'feat', label: 'rnahub regions', key: 'regions', color: '--gene', h: ANN_H });
+    if (DATA.conservation) r.push({ type: 'cons', label: 'Conservation (genera)', h: 26 });
+    if (DATA.helices.length) r.push({ type: 'feat', label: 'Our helices, genus', key: 'hel_genus', color: '--c1', h: ANN_H });
+    if (DATA.helices.length) r.push({ type: 'feat', label: 'Our helices, full', key: 'hel_full', color: '--c1', h: ANN_H });
+    if (DATA.promoters) r.push({ type: 'feat', label: 'PEP promoters', key: 'promoters', color: '--gene', h: ANN_H });
+    if (DATA.mehta.length) r.push({ type: 'feat', label: 'Mehta families', key: 'mehta', color: '--c5', h: ANN_H });
+    r.push({ type: 'feat', label: 'Rfam (cmscan)', key: 'rfam', color: '--c6', h: ANN_H });
+    (DATA.extra || []).forEach(e => r.push({ type: 'feat', label: e.label, key: 'x_' + e.key, color: e.color, h: ANN_H }));
+    if (DATA.terminators.length) r.push({ type: 'feat', label: 'Terminators', key: 'terminators', color: '--c3', h: ANN_H });
+  }
+  const ENDROWS = [['tss', 'TSS (Terminome)', '--c2'], ['wt5tap', "RNA 5′ ends +TAP", '--c3'], ['wt3', "RNA 3′ ends, WT", '--c1'], ['pnp3', "RNA 3′ ends, pnp", '--c7']];
+  if (DATA.rnaseq && shown['RNA-seq']) DATA.rnaseq.forEach((t, i) => r.push({ type: 'rnaseq', label: t.label, idx: i, color: '--c6', h: 44 }));
+  if (DATA.ends && shown['RNA ends']) ENDROWS.forEach(([k, lab, col]) => r.push({ type: 'ends', label: lab, key: k, color: col, h: 30 }));
+  DATA.tracks.forEach(t => { if (shown[t.group]) r.push({ type: 'data', label: t.label, track: t, color: GROUPS.find(g => g[0] === t.group)[1], h: DAT_H }); });
+  const idx = k => { const i = order.indexOf(k); return i < 0 ? 1e6 : i; };
+  return r.map((x, i) => [x, i]).sort((a, b) => idx(a[0].label) - idx(b[0].label) || a[1] - b[1]).map(x => x[0]);
+}
+// Mehta families that are the antisense strand of a tRNA (tRNAscan-SE / Rfam RF00005 on all seed sequences; trna/validate_trna.py)
+const TRNA_AS = { RF04351: 'trnS-GCU (3′ half)', RF04354: 'trnI-CAU' };
+const asNote = m => TRNA_AS[m.acc] ? `<br><b>⚠ Antisense of ${TRNA_AS[m.acc]}</b>: all seed sequences match the tRNA model on the reverse strand; likely not a new RNA` : '';
+const FEAT = {
+  regions: DATA.regions.map(r => ({ ...r, name: r.name, info: `${r.name}<br>genus ${r.genus_cov || '–'} cov / ${r.genus_canon || '–'} canonical; full ${r.full_cov || '–'} / ${r.full_canon || '–'}`, w: +r.genus_canon >= 1 ? 1 : .35 })),
+  hel_genus: DATA.helices.filter(h => h.run === 'genus').map(h => ({ ...h, name: `${h.nbp} bp`, info: `Helix in ${h.region}<br>${h.nbp} bp, ${h.ncov} covarying (genus)${(DATA.helix_expr || {})['genus:' + h.start + '-' + h.end] || ''}`, w: h.ncov >= 2 && h.nbp >= 4 ? 1 : .35 })),
+  hel_full: DATA.helices.filter(h => h.run === 'full').map(h => ({ ...h, name: `${h.nbp} bp`, info: `Helix in ${h.region}<br>${h.nbp} bp, ${h.ncov} covarying (full)${(DATA.helix_expr || {})['full:' + h.start + '-' + h.end] || ''}`, w: h.ncov >= 2 && h.nbp >= 4 ? 1 : .35 })),
+  mehta: DATA.mehta.map(m => ({ ...m, name: m.id.replace('Plastid-', ''), info: `${m.id} (${m.acc}) ${m.strand}<br>${m.type}, E=${m.evalue}<br>our helix on locus: genus ${m.genus_helix}, full ${m.full_helix}${asNote(m)}`, w: TRNA_AS[m.acc] ? .35 : 1, url: `https://rfam.org/family/${m.acc}` })),
+  rfam: DATA.rfam.map(m => ({ ...m, name: m.id, color: /tRNA|rRNA|SSU|LSU/i.test(m.id) ? '--c6' : '--c7', info: `${m.id} (${m.acc}) ${m.strand}<br>E=${m.evalue}${asNote(m)}`, w: TRNA_AS[m.acc] ? .35 : 1, url: `https://rfam.org/family/${m.acc}` })),
+  terminators: DATA.terminators.map(t => ({ ...t, name: '', info: `TransTermHP ${t.strand}, conf ${t.confidence}<br>after ${t.upstream_gene} (+${t.dist_from_gene_end} nt)`, w: t.confidence >= 90 ? 1 : .35 })),
+};
+const STRANDED = new Set(['rfam', 'mehta', 'terminators', ...(DATA.extra || []).map(e => 'x_' + e.key)]);  // feature rows drawn as arrows
+const SIGCOL = { 'SIG2-dependent': '--c2', 'partial': '--c4', 'SIG2-independent': '--gene' };
+if (DATA.promoters) FEAT.promoters = DATA.promoters.map(p => ({ ...p, start: Math.min(p.pos35, p.pos10), end: Math.max(p.pos35, p.pos10) + 5,
+  name: p.gene + (p.literature ? ' · ' + p.literature.split(' (')[0] : ''), color: SIGCOL[p.sig2_class], w: 1,
+  info: `<b>PEP promoter → ${p.gene}</b> (${p.box_strand})<br>−35 ${p.box35} · ${p.spacer} nt · −10 ${p.box10}; TSS ≈ ${p.tss_est.toLocaleString()}<br>conservation −35 ${p.cons35.toFixed(2)}, −10 ${p.cons10.toFixed(2)}<br>${p.sig2_class} (sig2 change ${p.sig2_change >= 0 ? '+' : ''}${p.sig2_change})${p.literature ? '<br>literature: ' + p.literature : ''}` }));
+const MAP = PAGE.map || [[1, 84170, 'LSC'], [84171, 110434, 'IRb'], [110435, 128214, 'SSC'], [128215, 154478, 'IRa']];
+(DATA.extra || []).forEach(e => { FEAT['x_' + e.key] = e.items.map(f => ({ w: 1, ...f })); });
+
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d'), tip = document.getElementById('tip');
+let layout = [];
+// Box with a pointed 3' end (strand '+' points right, '-' left; no strand = plain box); chevrons inside when wide, skipping a centred gap
+function strandBox(X0, X1, y0, y1, strand, gap = 0) {
+  const gm = (y0 + y1) / 2, tip = strand ? Math.min(7, (X1 - X0) * .6) : 0, fw = strand === '+';
+  ctx.beginPath();
+  if (!strand) ctx.rect(X0, y0, X1 - X0, y1 - y0);
+  else if (fw) { ctx.moveTo(X0, y0); ctx.lineTo(X1 - tip, y0); ctx.lineTo(X1, gm); ctx.lineTo(X1 - tip, y1); ctx.lineTo(X0, y1); }
+  else { ctx.moveTo(X1, y0); ctx.lineTo(X0 + tip, y0); ctx.lineTo(X0, gm); ctx.lineTo(X0 + tip, y1); ctx.lineTo(X1, y1); }
+  ctx.closePath(); ctx.fill();
+  if (strand && X1 - X0 > 40) {
+    const a = ctx.globalAlpha, PW = cv.clientWidth - LABW - 8, c = (X0 + X1) / 2, d = fw ? -3 : 3;
+    ctx.strokeStyle = css('--panel'); ctx.globalAlpha = a * .7; ctx.lineWidth = 1.2;
+    for (let cx = Math.max(X0, LABW) + 14; cx < Math.min(X1, LABW + PW) - 12; cx += 28) { if (Math.abs(cx - c) < gap) continue;
+      ctx.beginPath(); ctx.moveTo(cx + d, gm - 3); ctx.lineTo(cx, gm); ctx.lineTo(cx + d, gm + 3); ctx.stroke(); }
+    ctx.globalAlpha = a; ctx.lineWidth = 1; }
+  return tip;
+}
+function draw() {
+  const R = rows(), dpr = window.devicePixelRatio || 1, W = cv.clientWidth;
+  const H = R.reduce((s, r) => s + r.h + 6, 0) + 22;
+  cv.style.height = H + 'px'; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const PW = W - LABW - 8, x = p => LABW + (p - view[0]) / (view[1] - view[0] + 1) * PW, fg = css('--fg'), mu = css('--muted');
+  const narrow = W < 560, labw = narrow ? 0 : LABW;
+  ctx.font = `11px ${css('--sans')}`; ctx.textBaseline = 'middle';
+  /* axis */
+  const span = view[1] - view[0] + 1, step = Math.pow(10, Math.floor(Math.log10(span / 5)));
+  const st = span / step > 25 ? step * 5 : span / step > 10 ? step * 2 : step;
+  ctx.fillStyle = mu; ctx.strokeStyle = css('--grid');
+  for (let p = Math.ceil(view[0] / st) * st; p <= view[1]; p += st) {
+    const X = x(p); ctx.beginPath(); ctx.moveTo(X, 14); ctx.lineTo(X, H); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.fillText(p.toLocaleString(), X, 7);
+  }
+  if (sel) { ctx.fillStyle = css('--hl'); const a = x(sel.start), b = Math.max(x(sel.end + 1), a + 2); ctx.fillRect(a, 14, b - a, H - 14); }
+  let y = 20; layout = [];
+  for (const r of R) {
+    ctx.fillStyle = fg; ctx.textAlign = 'left'; ctx.font = `11px ${css('--sans')}`;
+    ctx.fillStyle = css('--muted'); ctx.fillText('⋮⋮', 3, y + r.h / 2);  // grip: drag the label to reorder
+    ctx.fillStyle = rdrag && rdrag.key === r.label ? css('--accent') : fg; ctx.fillText(r.label, 16, y + r.h / 2);
+    const items = []; let lastLab = -1;
+    ctx.save(); if (r.type !== 'data') { ctx.beginPath(); ctx.rect(LABW, y - 2, PW, r.h + 4); ctx.clip(); }  // keep features out of the label column
+    if (r.type === 'map') {
+      const cols = ['--c1', '--c4', '--c3', '--c4'];
+      MAP.forEach(([a, b, n], i) => { if (b < view[0] || a > view[1]) return; ctx.fillStyle = css(cols[i % cols.length]); ctx.globalAlpha = .55;
+        const X0 = Math.max(x(a), LABW), X1 = Math.min(x(b + 1), LABW + PW); ctx.fillRect(X0, y + 2, X1 - X0 - 1, r.h - 4); ctx.globalAlpha = 1;
+        items.push({ start: a, end: b, info: `${n} ${a.toLocaleString()}–${b.toLocaleString()}` }); });
+    } else if (r.type === 'genes') {
+      for (const g of DATA.genes) { if (g.strand !== r.strand || g.end < view[0] || g.start > view[1]) continue;
+        const X0 = x(g.start), X1 = Math.max(x(g.end + 1), X0 + 1);
+        ctx.fillStyle = g.type === 'CDS' ? css('--gene') : g.type === 'tRNA' ? css('--c6') : css('--c2');
+        ctx.font = `10px ${css('--sans')}`; const lw = ctx.measureText(g.name).width;
+        const tip = strandBox(X0, X1, y + 4, y + r.h - 4, g.strand, lw / 2 + 8);
+        if (X1 - X0 > lw + 6 + tip) { ctx.fillStyle = css('--panel'); ctx.textAlign = 'center'; ctx.font = `10px ${css('--sans')}`; ctx.fillText(g.name, (X0 + X1) / 2, y + r.h / 2); }
+        else if (span < 20000) { ctx.fillStyle = mu; ctx.textAlign = 'left'; ctx.font = `10px ${css('--sans')}`; ctx.fillText(g.name, X1 + 2, y + r.h / 2); }
+        items.push({ ...g, info: `${g.name} (${g.type}) ${g.strand}<br>${g.start.toLocaleString()}–${g.end.toLocaleString()}` }); }
+    } else if (r.type === 'rnaseq') {  // stranded coverage: + strand up, - strand down, log scale shared by all samples
+      const t = DATA.rnaseq[r.idx], mid = y + r.h / 2, i0 = Math.max(0, Math.floor((view[0] - 1) / 10)), i1 = Math.min(t.plus.length - 1, Math.floor((view[1] - 1) / 10));
+      if (!DATA._rsmax) DATA._rsmax = Math.log10(1 + Math.max(...DATA.rnaseq.flatMap(s => [Math.max(...s.plus), Math.max(...s.minus)])));
+      ctx.strokeStyle = css('--line'); ctx.beginPath(); ctx.moveTo(LABW, mid); ctx.lineTo(LABW + PW, mid); ctx.stroke();
+      const cols = Math.min(PW, i1 - i0 + 1);
+      for (let k = 0; k < cols; k++) {
+        const a = i0 + Math.floor(k * (i1 - i0 + 1) / cols), b = Math.max(a + 1, i0 + Math.floor((k + 1) * (i1 - i0 + 1) / cols));
+        let p = 0, m = 0; for (let i = a; i < b; i++) { p = Math.max(p, t.plus[i]); m = Math.max(m, t.minus[i]); }
+        const X0 = x(a * 10 + 1), W = Math.max(x(b * 10 + 1) - X0, 1), hp = Math.log10(1 + p) / DATA._rsmax * (r.h / 2 - 1), hm = Math.log10(1 + m) / DATA._rsmax * (r.h / 2 - 1);
+        ctx.fillStyle = css('--c6'); ctx.fillRect(X0, mid - hp, W, hp);
+        ctx.fillStyle = css('--c7'); ctx.fillRect(X0, mid, W, hm);
+      }
+      items.push({ rnaseq: r.idx });
+    } else if (r.type === 'ends') {  // sticks: + strand up, - strand down; height log-scaled to the track maximum
+      const E = DATA.ends.tracks[r.key], mid = y + r.h / 2, mx = Math.log10(1 + Math.max(...E.map(e => e[2])));
+      ctx.strokeStyle = css('--line'); ctx.beginPath(); ctx.moveTo(LABW, mid); ctx.lineTo(LABW + PW, mid); ctx.stroke();
+      ctx.strokeStyle = css(r.color); ctx.lineWidth = span < 3000 ? 2 : 1;
+      for (const e of E) { if (e[0] < view[0] || e[0] > view[1]) continue;
+        const X = x(e[0] + .5), hh = Math.max(1.5, Math.log10(1 + e[2]) / mx * (r.h / 2 - 1));
+        ctx.beginPath(); ctx.moveTo(X, mid); ctx.lineTo(X, mid - e[1] * hh); ctx.stroke(); }
+      ctx.lineWidth = 1;
+      items.push({ ends: r.key });
+    } else if (r.type === 'cons') {
+      const v = DATA.conservation, i0 = Math.max(0, Math.floor((view[0] - 1) / 10)), i1 = Math.min(v.length - 1, Math.floor((view[1] - 1) / 10));
+      ctx.fillStyle = css('--c1');
+      for (let i = i0; i <= i1; i++) { if (v[i] == null) continue; const X0 = x(i * 10 + 1), X1 = x(i * 10 + 11), hh = v[i] * (r.h - 4);
+        ctx.globalAlpha = .35 + .65 * v[i]; ctx.fillRect(X0, y + r.h - 2 - hh, Math.max(X1 - X0, 1), hh); }
+      ctx.globalAlpha = 1;
+      items.push({ cons: true });
+    } else if (r.type === 'feat') {
+      const c = css(r.color);
+      for (const f of FEAT[r.key]) { if (f.end < view[0] || f.start > view[1]) continue;
+        const X0 = x(f.start), X1 = Math.max(x(f.end + 1), X0 + 2);
+        if (r.key === 'regions') { ctx.strokeStyle = c; ctx.globalAlpha = f.w; ctx.lineWidth = f.w === 1 ? 1.5 : 1; ctx.strokeRect(X0 + .5, y + 3.5, X1 - X0 - 1, r.h - 7); }  // outline only
+        else { ctx.fillStyle = f.color ? css(f.color) : c; ctx.globalAlpha = f.w;
+          if (STRANDED.has(r.key) && (f.strand === '+' || f.strand === '-')) strandBox(X0, X1, y + 3, y + r.h - 3, f.strand);
+          else ctx.fillRect(X0, y + 3, X1 - X0, r.h - 6); }
+        ctx.globalAlpha = 1;
+        if (r.key === 'promoters') {  // bent arrow at the estimated TSS, pointing the way the gene is transcribed
+          const d = f.box_strand === '+' ? 1 : -1, T = x(f.tss_est), L1 = 16;
+          ctx.strokeStyle = ctx.fillStyle = css(f.color || r.color); ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(T, y + r.h - 3); ctx.lineTo(T, y + 2); ctx.lineTo(T + d * L1, y + 2); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(T + d * (L1 + 5), y + 2); ctx.lineTo(T + d * L1, y - 1.5); ctx.lineTo(T + d * L1, y + 5.5); ctx.closePath(); ctx.fill();
+        }
+        if (f.name && span < 30000 && X1 + 2 > lastLab) { ctx.fillStyle = mu; ctx.textAlign = 'left'; ctx.font = `10px ${css('--sans')}`; ctx.fillText(f.name, X1 + 2, y + r.h / 2); lastLab = X1 + 8 + ctx.measureText(f.name).width; }
+        items.push(f); }
+    } else {
+      const v = r.track.values, c = css(r.color), mid = y + r.h / 2, M = 3;
+      ctx.strokeStyle = css('--line'); ctx.beginPath(); ctx.moveTo(LABW, mid); ctx.lineTo(LABW + PW, mid); ctx.stroke();
+      const i0 = Math.max(0, Math.floor((view[0] - 1) / BIN)), i1 = Math.min(v.length - 1, Math.floor((view[1] - 1) / BIN));
+      const px = PW / ((i1 - i0 + 1));
+      // aggregate bins per pixel column (mean)
+      const cols = Math.min(PW, i1 - i0 + 1);
+      for (let k = 0; k < cols; k++) {
+        const a = i0 + Math.floor(k * (i1 - i0 + 1) / cols), b = i0 + Math.floor((k + 1) * (i1 - i0 + 1) / cols);
+        let s = 0; for (let i = a; i < Math.max(b, a + 1); i++) s += v[i]; s /= Math.max(b - a, 1);
+        const hgt = Math.max(-1, Math.min(1, s / M)) * (r.h / 2 - 1);
+        const X0 = x(a * BIN + 1), X1 = x(Math.max(b, a + 1) * BIN + 1);
+        ctx.fillStyle = c; ctx.globalAlpha = s >= 0 ? 1 : +css('--neg');
+        ctx.fillRect(X0, hgt >= 0 ? mid - hgt : mid, Math.max(X1 - X0 - (px > 4 ? 1 : 0), 1), Math.abs(hgt));
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = mu; ctx.font = `9px ${css('--mono')}`; ctx.textAlign = 'right';
+      ctx.fillText('+3', LABW - 4, y + 5); ctx.fillText('−3', LABW - 4, y + r.h - 5);
+      items.push({ data: r.track });
+    }
+    ctx.restore();
+    layout.push({ y, h: r.h, row: r, items });
+    y += r.h + 6;
+  }
+  if (document.getElementById('guides').checked) {  // Rfam hit edges as dashed lines through every track
+    ctx.save(); ctx.setLineDash([3, 3]); ctx.lineWidth = 1; ctx.globalAlpha = .6;
+    for (const f of FEAT.rfam) { if (f.end < view[0] || f.start > view[1]) continue;
+      ctx.strokeStyle = css(f.color);
+      for (const X of [x(f.start), x(f.end + 1)]) { if (X < LABW || X > LABW + PW) continue; ctx.beginPath(); ctx.moveTo(X + .5, 14); ctx.lineTo(X + .5, y); ctx.stroke(); } }
+    ctx.restore();
+  }
+  if (rdrag && rdrag.to != null) { const t = layout[rdrag.to], yy = rdrag.to >= layout.length ? y - 3 : t.y - 3;
+    ctx.fillStyle = css('--accent'); ctx.fillRect(0, yy - 1, W, 3); }
+  document.getElementById('loc').value = `${Math.round(view[0])}-${Math.round(view[1])}`;
+  drawOverview();
+}
+/* whole-genome overview with a box for the current view; click or drag it to move */
+const ov = document.getElementById('ov'), octx = ov.getContext('2d');
+function drawOverview() {
+  const dpr = window.devicePixelRatio || 1, W = ov.clientWidth, H = 46; ov.width = W * dpr; ov.height = H * dpr; octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const PW = W - LABW - 8, x = p => LABW + (p - 1) / L * PW, mu = css('--muted');
+  octx.clearRect(0, 0, W, H); octx.font = `11px ${css('--sans')}`; octx.textBaseline = 'middle';
+  octx.fillStyle = css('--fg'); octx.textAlign = 'left'; octx.fillText('Whole genome', 4, 22);
+  const cols = ['--c1', '--c4', '--c3', '--c4'];
+  MAP.forEach(([a, b, n], i) => { octx.fillStyle = css(cols[i % cols.length]); octx.globalAlpha = .35; octx.fillRect(x(a), 14, Math.max(x(b + 1) - x(a) - 1, 1), 16); octx.globalAlpha = 1;
+    if (!PAGE.mapNoLabels) { octx.fillStyle = mu; octx.textAlign = 'center'; octx.fillText(n, (x(a) + x(b + 1)) / 2, 6); } });
+  octx.fillStyle = css('--gene'); for (const g of DATA.genes) octx.fillRect(x(g.start), g.strand === '+' ? 16 : 23, Math.max(x(g.end + 1) - x(g.start), 1), 5);
+  if (PAGE.jump) { octx.fillStyle = css('--c2'); octx.fillRect(x(PAGE.jump.start) - 1, 31, 3, 5); }
+  octx.fillStyle = mu; octx.textAlign = 'center'; for (let p = 0; p <= L; p += PAGE.tick) octx.fillText(p ? (p / 1000) + ' kb' : '0', Math.min(Math.max(x(p + 1), LABW + 10), LABW + PW - 14), 41);
+  const a = x(view[0]), b = Math.max(x(view[1] + 1), a + 3);
+  octx.fillStyle = css('--hl'); octx.fillRect(a, 11, b - a, 22); octx.strokeStyle = css('--c2'); octx.lineWidth = 2; octx.strokeRect(a, 11, b - a, 22);
+}
+let odrag = false;
+function ovMove(e) { const r = ov.getBoundingClientRect(), PW = ov.clientWidth - LABW - 8, w = view[1] - view[0] + 1;
+  const c = 1 + (e.clientX - r.left - LABW) / PW * L; setView(c - w / 2, c + w / 2 - 1); }
+ov.addEventListener('pointerdown', e => { odrag = true; ov.setPointerCapture(e.pointerId); ovMove(e); });
+ov.addEventListener('pointermove', e => { if (odrag) ovMove(e); });
+ov.addEventListener('pointerup', () => { odrag = false; });
+function setView(a, b) {
+  const w = Math.max(200, Math.min(L, b - a + 1)); let s = Math.round(a);
+  s = Math.max(1, Math.min(L - w + 1, s)); view = [s, s + w - 1]; draw();
+}
+function px2pos(X) { const PW = cv.clientWidth - LABW - 8; return view[0] + (X - LABW) / PW * (view[1] - view[0] + 1); }
+function zoom(f, c) { const w = view[1] - view[0] + 1, cpos = c ?? (view[0] + w / 2), nw = w * f; setView(cpos - (cpos - view[0]) * f, cpos - (cpos - view[0]) * f + nw - 1); }
+function focus(s, e, item, minPad = 400) { sel = item || { start: s, end: e }; const pad = Math.max(minPad, (e - s + 1) * 4); setView(s - pad, e + pad); }
+
+document.getElementById('go').onclick = () => { if (applyState(document.getElementById('loc').value)) return; const m = document.getElementById('loc').value.replace(/,/g, '').match(/(\d+)\D+(\d+)/); if (m) setView(+m[1], +m[2]); };
+document.getElementById('loc').onkeydown = e => { if (e.key === 'Enter') document.getElementById('go').click(); };
+document.getElementById('zin').onclick = () => zoom(Math.pow(.6, zspeed));
+document.getElementById('zout').onclick = () => zoom(Math.pow(1 / .6, zspeed));
+document.getElementById('whole').onclick = () => { sel = null; setView(1, L); };
+document.getElementById('reset-order').onclick = () => { order = []; try { localStorage.removeItem('pb-order'); } catch (e) {} draw(); };
+document.getElementById('guides').onchange = draw;
+const jb = document.getElementById('jump-hp');
+if (PAGE.jump) { jb.textContent = PAGE.jump.label; jb.onclick = () => focus(PAGE.jump.start, PAGE.jump.end, null, PAGE.jump.pad); } else jb.hidden = true;
+document.getElementById('loc').value = `1-${L}`;
+
+// Find: gene names plus Rfam / Mehta / region / extra-row names. Parts of a gene within 5 kb are merged (exons);
+// copies further apart (inverted repeats, trans-splicing) are separate hits, and Enter steps through them.
+const FIND = (() => {
+  const m = new Map(), add = (n, s, e, item) => { if (!n) return; const k = n.toLowerCase(); if (!m.has(k)) m.set(k, { name: n, hits: [] });
+    const h = m.get(k).hits, near = h.find(x => s <= x.end + 5000 && e >= x.start - 5000);
+    if (near) { near.start = Math.min(near.start, s); near.end = Math.max(near.end, e); } else h.push({ start: s, end: e, item }); };
+  for (const g of DATA.genes || []) add(g.name, g.start, g.end, g);
+  for (const f of [...(DATA.rfam || []), ...(DATA.mehta || [])]) { add(f.id, f.start, f.end, f); add(f.acc, f.start, f.end, f); }
+  for (const f of DATA.regions || []) add(f.name, f.start, f.end, f);
+  for (const r of DATA.extra || []) for (const f of r.items) add(f.name, f.start, f.end, f);
+  for (const v of m.values()) v.hits.sort((a, b) => a.start - b.start);
+  return m;
+})();
+document.getElementById('find-list').innerHTML = [...FIND.values()].filter(v => !/^(intergenic|intron)_/.test(v.name)).map(v => v.name)
+  .sort((a, b) => a.localeCompare(b)).map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('');
+let findState = { key: '', i: -1 };
+function doFind() {
+  const inp = document.getElementById('find'), msg = document.getElementById('find-msg'), q = inp.value.trim().toLowerCase();
+  if (!q) { msg.textContent = ''; return; }
+  let v = FIND.get(q);
+  if (!v) { const c = [...FIND.values()].filter(x => x.name.toLowerCase().startsWith(q)); v = c.length ? c[0] : [...FIND.values()].find(x => x.name.toLowerCase().includes(q)); }
+  if (!v) { msg.textContent = 'not found'; return; }
+  findState = findState.key === v.name ? { key: v.name, i: (findState.i + 1) % v.hits.length } : { key: v.name, i: 0 };
+  const h = v.hits[findState.i];
+  focus(h.start, h.end, h.item && h.item.start === h.start && h.item.end === h.end ? h.item : null);
+  msg.textContent = v.hits.length > 1 ? `${v.name} ${findState.i + 1}/${v.hits.length}` : v.name;
+}
+document.getElementById('find').onkeydown = e => { if (e.key === 'Enter') doFind(); };
+document.getElementById('find').onchange = doFind;
+
+let drag = null;
+function rowIndexAt(Y) { let i = layout.findIndex(l => Y < l.y + l.h / 2); return i < 0 ? layout.length : i; }
+cv.addEventListener('pointerdown', e => {
+  const r = cv.getBoundingClientRect(), X = e.clientX - r.left, Y = e.clientY - r.top;
+  if (X < LABW) { const row = layout.find(l => Y >= l.y - 3 && Y <= l.y + l.h + 3);
+    if (row) { rdrag = { key: row.row.label, to: null }; cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing'; } return; }
+  drag = { x: e.clientX, v: view.slice(), moved: false }; cv.setPointerCapture(e.pointerId); cv.classList.add('drag'); });
+cv.addEventListener('pointermove', e => {
+  const r = cv.getBoundingClientRect(), X = e.clientX - r.left, Y = e.clientY - r.top;
+  if (rdrag) { rdrag.to = rowIndexAt(Y); draw(); return; }
+  cv.style.cursor = X < LABW ? 'ns-resize' : '';
+  if (drag) { const dx = e.clientX - drag.x; if (Math.abs(dx) > 3) drag.moved = true;
+    const bp = dx / (cv.clientWidth - LABW - 8) * (drag.v[1] - drag.v[0] + 1); setView(drag.v[0] - bp, drag.v[1] - bp); tip.hidden = true; return; }
+  showTip(X, Y);
+});
+cv.addEventListener('pointerup', e => {
+  if (rdrag) { const keys = layout.map(l => l.row.label), from = keys.indexOf(rdrag.key);
+    if (rdrag.to != null && from >= 0) { let to = rdrag.to; keys.splice(from, 1); if (to > from) to--; keys.splice(to, 0, rdrag.key);
+      order = [...keys, ...order.filter(k => !keys.includes(k))]; try { localStorage.setItem('pb-order', JSON.stringify(order)); } catch (err) {} }
+    rdrag = null; cv.style.cursor = ''; draw(); return; }
+  cv.classList.remove('drag'); const d = drag; drag = null;
+  if (d && !d.moved) { const r = cv.getBoundingClientRect(); const f = hitAt(e.clientX - r.left, e.clientY - r.top); if (f && f.start) { sel = f; draw(); showCard(f, e.clientX - r.left, e.clientY - r.top); } else card.hidden = true; } });
+/* click card: real links out for genes and Rfam families */
+const card = document.getElementById('card');
+function featLinks(f) {
+  const L = [];
+  if (f.geneid) L.push(['NCBI Gene', `https://www.ncbi.nlm.nih.gov/gene/${f.geneid}`]);
+  if (f.protein) L.push(['NCBI Protein', `https://www.ncbi.nlm.nih.gov/protein/${f.protein}`]);
+  if (f.type === 'CDS' && !PAGE.noUniprot) L.push(['UniProt', `https://www.uniprot.org/uniprotkb?query=gene:${encodeURIComponent(f.name)}+AND+organism_id:3702`]);
+  if (f.url) L.push([`Rfam ${f.acc}`, f.url]);
+  if ('genus_helix' in f) L.push(['Mehta et al. 2025', 'https://www.biorxiv.org/content/10.1101/2025.08.06.668526v3']);
+  return L;
+}
+function showCard(f, X, Y) {
+  tip.hidden = true;
+  const L = featLinks(f), extra = f.product ? `<br>${f.product}${f.locus ? ' · ' + f.locus : ''}` : '';
+  const reg = f.region || (f.genus_cov !== undefined ? f.name : '');
+  if (reg && (hasR2R(reg, 'genus') || hasR2R(reg, 'full'))) { card.hidden = true; openR2R(reg, hasR2R(reg, 'genus') ? 'genus' : 'full'); return; }  // one click opens the structure
+  const rb = r2rButtons(reg);
+  card.innerHTML = `<button aria-label="Close">×</button><div>${f.info}${extra}</div>` + (L.length ? `<div class="links">${L.map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${t} ↗</a>`).join('')}</div>` : '')
+    + (rb ? `<div class="links">${rb}</div>` : '');
+  card.hidden = false; card.querySelector('button').onclick = () => { card.hidden = true; };
+  card.style.left = Math.max(4, Math.min(X + 10, cv.clientWidth - card.offsetWidth - 4)) + 'px'; card.style.top = (Y + 12) + 'px';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { card.hidden = true; r2rBox.hidden = true; } });
+/* R2R pop-up: R-scape CaCoFold structure for an rnahub region (genus or full run) */
+const r2rBox = document.getElementById('r2r'), r2rImg = document.getElementById('r2r-img');
+let r2rCur = null, r2rScale = 1;
+const hasR2R = (region, run) => !!(DATA.r2r && DATA.r2r[run] && DATA.r2r[run].includes(region));
+function r2rButtons(region) {
+  if (!region) return '';
+  return ['genus', 'full'].filter(run => hasR2R(region, run)).map(run => `<button class="r2rb" data-r2r="${region}" data-run="${run}">R2R ${run}</button>`).join(' ');
+}
+function openR2R(region, run) {
+  r2rCur = { region, run }; r2rScale = 1; r2rImg.style.width = '100%';  // fit the pop-up width; +/- zoom from there
+  r2rImg.src = `r2r/${run}/${region}.svg`;
+  document.getElementById('r2r-title').textContent = region;
+  document.getElementById('r2r-run').textContent = `R-scape CaCoFold, ${run === 'genus' ? 'one genome per genus' : 'all RefSeq plastids'}; green pairs = significantly covarying`;
+  const other = run === 'genus' ? 'full' : 'genus', ob = document.getElementById('r2r-other');
+  ob.hidden = !hasR2R(region, other); ob.textContent = `Show ${other}`; ob.onclick = () => openR2R(region, other);
+  r2rBox.hidden = false; document.getElementById('r2r-close').focus();
+}
+const r2rZoom = f => { r2rScale *= f; r2rImg.style.width = (100 * r2rScale) + '%'; };
+document.getElementById('r2r-zin').onclick = () => r2rZoom(1.25);
+document.getElementById('r2r-zout').onclick = () => r2rZoom(.8);
+document.getElementById('r2r-close').onclick = () => { r2rBox.hidden = true; };
+r2rBox.addEventListener('click', e => { if (e.target === r2rBox) r2rBox.hidden = true; });
+document.addEventListener('click', e => { const b = e.target.closest('[data-r2r]'); if (b) { e.stopPropagation(); openR2R(b.dataset.r2r, b.dataset.run); } }, true);
+cv.addEventListener('pointerleave', () => { tip.hidden = true; });
+let zspeed = 1; try { zspeed = +(localStorage.getItem('pb-zspeed') || 1); } catch (e) {}
+const zsel = document.getElementById('zspeed'); zsel.value = String(zspeed);
+zsel.onchange = () => { zspeed = +zsel.value; try { localStorage.setItem('pb-zspeed', zsel.value); } catch (e) {} };
+// zoom in proportion to the wheel/trackpad delta, so a trackpad swipe is smooth and a mouse notch is one step
+cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect();
+  const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+  zoom(Math.min(2, Math.max(.5, Math.exp(d * .002 * zspeed))), px2pos(e.clientX - r.left)); }, { passive: false });
+function hitAt(X, Y) {
+  const row = layout.find(l => Y >= l.y && Y <= l.y + l.h); if (!row || X < LABW) return null;
+  const p = px2pos(X), tol = (view[1] - view[0]) / cv.clientWidth * 3;
+  if (row.row.type === 'rnaseq') { const t = DATA.rnaseq[row.row.idx], i = Math.floor((p - 1) / 10);
+    return { info: `<b>${t.label}</b><br>${(i * 10 + 1).toLocaleString()}–${((i + 1) * 10).toLocaleString()}<br>+ strand: ${t.plus[i]}<br>− strand: ${t.minus[i]}<br><span class="hint">depth per 10⁸ total coverage</span>` }; }
+  if (row.row.type === 'ends') { const E = DATA.ends.tracks[row.row.key], tol2 = Math.max(2, tol);
+    const hits = E.filter(e => Math.abs(e[0] - p) <= tol2).sort((a, b) => b[2] - a[2]).slice(0, 4);
+    return hits.length ? { info: `<b>${row.row.label}</b><br>` + hits.map(e => `${e[0].toLocaleString()} (${e[1] > 0 ? '+' : '−'}): ${e[2].toFixed(0)} RPM${e[3] ? `, TAP/noTAP ${e[3]}` : ''}`).join('<br>') } : null; }
+  if (row.row.type === 'cons') { const i = Math.floor((p - 1) / 10), v = DATA.conservation[i];
+    return { info: v == null ? 'Not in a scanned region' : `<b>Conservation</b><br>${(i * 10 + 1).toLocaleString()}–${((i + 1) * 10).toLocaleString()}: ${(v * 100).toFixed(0)}% identity to A. thaliana across plastid genera` }; }
+  if (row.row.type === 'data') { const t = row.items[0].data, i = Math.floor((p - 1) / BIN);
+    return { info: `<b>${t.label}</b><br>${(i * BIN + 1).toLocaleString()}–${((i + 1) * BIN).toLocaleString()}: log2 ${t.values[i]?.toFixed(2)}` }; }
+  return row.items.find(f => p >= f.start - tol && p <= f.end + tol) || null;
+}
+function showTip(X, Y) {
+  const f = hitAt(X, Y); if (!f) { tip.hidden = true; return; }
+  tip.innerHTML = f.info; tip.hidden = false;
+  const bw = cv.clientWidth; tip.style.left = Math.min(X + 12, bw - tip.offsetWidth - 4) + 'px'; tip.style.top = (Y + 14) + 'px';
+}
+window.addEventListener('resize', draw);
+
+/* hit table */
+const tracks = DATA.tracks;
+let sortKey = 'start', sortDir = 1;
+function heat(p) { // percentile -> tint; high = warm, low = cool
+  const a = Math.abs(p - 50) / 50; return p >= 50 ? `rgba(235,104,52,${(a * .55).toFixed(2)})` : `rgba(42,120,214,${(a * .5).toFixed(2)})`;
+}
+function renderTable() {
+  const k = document.getElementById('kind').value, mode = document.getElementById('valmode').value;
+  let H = DATA.hits.filter(h => k === 'all' || h.kind === k);
+  H.sort((a, b) => { const va = sortKey in a ? a[sortKey] : a.values[sortKey][mode === 'pct' ? 1 : 0], vb = sortKey in b ? b[sortKey] : b.values[sortKey][mode === 'pct' ? 1 : 0];
+    return (va > vb ? 1 : va < vb ? -1 : 0) * sortDir; });
+  const th = (key, txt, cls = '', grp = '') => `<th class="${cls}" data-k="${key}" tabindex="0" aria-sort="${sortKey === key ? (sortDir > 0 ? 'ascending' : 'descending') : 'none'}">${grp ? `<span class="grp">${grp}</span>` : ''}${txt}${sortKey === key ? (sortDir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
+  let h = '<thead><tr>' + th('kind', 'Type') + th('name', 'Hit') + th('start', 'Locus', 'num') + '<th>Structure</th><th>Note</th>'
+    + tracks.map(t => th(t.id, t.label.split(', ').slice(1).join(', ') || t.label, 'num', t.label.split(', ')[0])).join('') + '</tr></thead><tbody>';
+  for (const x of H) {
+    const kd = KIND[x.kind], nm = x.acc ? `<a href="https://rfam.org/family/${x.acc}" target="_blank" rel="noopener">${x.name}</a>` : x.name;
+    h += `<tr tabindex="0" data-s="${x.start}" data-e="${x.end}"><td><span class="pill" style="color:var(${kd[1]})">${kd[0]}</span></td><td>${nm}</td>`
+      + `<td class="num mono">${x.start.toLocaleString()}–${x.end.toLocaleString()} ${x.strand}</td><td>${r2rButtons(x.region)}</td><td class="note">${x.note}</td>`
+      + tracks.map(t => { const [v, p] = x.values[t.id]; return `<td class="num mono"><span class="cell" style="background:${heat(p)}">${mode === 'pct' ? p.toFixed(0) : v.toFixed(2)}</span></td>`; }).join('') + '</tr>';
+  }
+  document.getElementById('tbl').innerHTML = h + '</tbody>';
+}
+document.getElementById('tbl').addEventListener('click', e => {
+  const t = e.target.closest('th'); if (t) { const k = t.dataset.k; if (!k) return; sortDir = sortKey === k ? -sortDir : (k in DATA.hits[0] ? 1 : -1); sortKey = k; renderTable(); return; }
+  const r = e.target.closest('tr[data-s]'); if (r && !e.target.closest('a')) { document.querySelectorAll('tr.sel').forEach(x => x.classList.remove('sel')); r.classList.add('sel'); focus(+r.dataset.s, +r.dataset.e); document.getElementById('browser').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+});
+document.getElementById('tbl').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.click(); });
+document.getElementById('kind').onchange = renderTable;
+document.getElementById('valmode').onchange = renderTable;
+
+/* promoter table */
+function renderPromoters() {
+  if (!DATA.promoters) { document.getElementById('prom-panel').hidden = true; return; }
+  const f = document.getElementById('pclass').value;
+  const P = DATA.promoters.filter(p => f === 'all' || (f === 'sig' ? p.sig2_class !== 'SIG2-independent' : !!p.literature));
+  const pill = c => `<span class="pill" style="color:var(${SIGCOL[c]})">${c}</span>`;
+  const cc = v => `<span class="cell" style="background:${heat(v * 100)}">${v.toFixed(2)}</span>`;
+  let h = '<thead><tr><th>Peak</th><th>Drives</th><th class="num">PEP Col-0 (log2)</th><th class="num">sig2 change</th><th>SIG2</th><th>−35 box</th><th class="num">cons</th><th class="num">spacer</th><th>−10 box</th><th class="num">cons</th><th class="num">TSS ≈ (boxes)</th><th class="num">TSS mapped (offset)</th><th>Literature sigma</th></tr></thead><tbody>';
+  for (const p of P) h += `<tr tabindex="0" data-s="${Math.min(p.pos35, p.pos10)}" data-e="${Math.max(p.pos35, p.pos10) + 5}"><td class="mono">${p.peak.toLocaleString()}</td><td>${p.gene} (${p.gene_strand || '?'})</td>`
+    + `<td class="num mono">${p.col0_log2.toFixed(2)}</td><td class="num mono">${p.sig2_change >= 0 ? '+' : ''}${p.sig2_change.toFixed(2)}</td><td>${pill(p.sig2_class)}</td>`
+    + `<td class="mono">${p.box35}</td><td class="num mono">${cc(p.cons35)}</td><td class="num mono">${p.spacer}</td><td class="mono">${p.box10}</td><td class="num mono">${cc(p.cons10)}</td>`
+    + `<td class="num mono">${p.tss_est.toLocaleString()}</td><td class="num mono">${p.tss_mapped ? `${p.tss_mapped.toLocaleString()} (${p.tss_offset >= 0 ? '+' : ''}${p.tss_offset})` : '–'}</td><td>${p.literature || ''}</td></tr>`;
+  document.getElementById('ptbl').innerHTML = h + '</tbody>';
+}
+document.getElementById('ptbl').addEventListener('click', e => { const r = e.target.closest('tr[data-s]'); if (!r) return;
+  document.querySelectorAll('tr.sel').forEach(x => x.classList.remove('sel')); r.classList.add('sel'); focus(+r.dataset.s, +r.dataset.e);
+  document.getElementById('browser').scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+document.getElementById('ptbl').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.click(); });
+document.getElementById('pclass').onchange = renderPromoters;
+renderPromoters();
+renderTable();
+// Shareable view: <page url>#loc=START-END&off=Group,Group (hidden track groups) [&sel=START-END]. The link restores
+// it when the host passes the hash on; pasting the link (or just the part after #) into the Locus box always does.
+function stateStr() {
+  const off = GROUPS.map(([g]) => g).filter(g => !shown[g]);
+  return `loc=${Math.round(view[0])}-${Math.round(view[1])}` + (off.length ? '&off=' + encodeURIComponent(off.join(',')) : '')
+    + (sel && sel.start ? `&sel=${sel.start}-${sel.end}` : '');
+}
+function applyState(str) {
+  const h = String(str || '').replace(/^.*?[#?]/, '');
+  const q = new URLSearchParams(h), loc = (q.get('loc') || '').replace(/,/g, '').match(/^(\d+)(?:\.\d*)?[^\d.]+(\d+)/);
+  if (!loc) return false;
+  if (q.has('off')) { const off = q.get('off').split(','); GROUPS.forEach(([g]) => { shown[g] = !off.includes(g); });
+    document.querySelectorAll('#groups .chip').forEach((b, i) => b.setAttribute('aria-pressed', shown[b.textContent.replace(/ \(\d+\)$/, '')] !== false)); }
+  const sm = (q.get('sel') || '').match(/^(\d+)-(\d+)$/);
+  sel = sm ? { start: +sm[1], end: +sm[2] } : null;
+  setView(+loc[1], +loc[2]);
+  return true;
+}
+const shareIn = document.getElementById('share-url');
+document.getElementById('share').onclick = () => {
+  const link = PAGE.url + '#' + stateStr();
+  shareIn.value = link; shareIn.hidden = false; shareIn.focus(); shareIn.select();
+  const b = document.getElementById('share'), done = t => { b.textContent = t; setTimeout(() => { b.textContent = 'Copy link'; }, 1600); };
+  try { navigator.clipboard.writeText(link).then(() => done('Copied ✓'), () => done('Select & copy')); } catch (e) { done('Select & copy'); }
+};
+// Saved views: named states (stateStr) shared by everyone who opens the page, kept in the artifact database
+// (collection "views": {name, state, created}). Hidden when the viewer has no database (e.g. signed out).
+(async () => {
+  const db = await (window.claude?.use?.('db') ?? Promise.resolve(null)).catch(() => null);
+  if (!db) return;
+  const box = document.getElementById('views-box'), vs = document.getElementById('views'), del = document.getElementById('del-view');
+  const col = db.collection('views');
+  let docs = [];
+  box.hidden = false;
+  col.orderBy('created').onSnapshot(snap => {
+    docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const cur = vs.value;
+    vs.replaceChildren(new Option('Saved views…', ''), ...docs.map(d => new Option(`${d.name} (${d.state.match(/loc=([\d-]+)/)?.[1] || ''})`, d.id)));
+    vs.value = docs.some(d => d.id === cur) ? cur : ''; del.hidden = !vs.value;
+  }, () => { box.hidden = true; });
+  vs.onchange = () => { const d = docs.find(x => x.id === vs.value); del.hidden = !d; if (d) applyState(d.state); };
+  const say = t => { document.getElementById('find-msg').textContent = t; };
+  document.getElementById('save-view').onclick = async () => {
+    const name = (prompt('Name for this view:', '') || '').trim().slice(0, 80);
+    if (!name) return;
+    try { const ref = await col.add({ name, state: stateStr(), created: new Date().toISOString() }); vs.value = ref.id; del.hidden = false; say(`Saved “${name}”`); }
+    catch (e) { say(e?.code === 'quota_exceeded' ? 'View list is full' : 'You cannot save views on this page (view-only access)'); }
+  };
+  del.onclick = async () => {
+    const d = docs.find(x => x.id === vs.value);
+    if (!d || !confirm(`Delete the saved view “${d.name}” for everyone?`)) return;
+    try { await col.doc(d.id).delete(); vs.value = ''; del.hidden = true; } catch (e) { say('You cannot delete views on this page'); }
+  };
+})();
+if (!applyState(location.hash) && !applyState(location.search)) { if (PAGE.jump) focus(PAGE.jump.start, PAGE.jump.end, null, PAGE.jump.pad); else setView(1, L); }
+</script>
